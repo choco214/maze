@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ランダム迷路ゲーム (修正版)</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            font-family: 'Arial', sans-serif;
+            background-color: #f4f7f9;
+            margin: 20px;
+        }
+
+        h1 {
+            color: #2c3e50;
+        }
+
+        #mazeCanvas {
+            border: 6px solid #2980b9;
+            background-color: #ecf0f1;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            touch-action: none; 
+        }
+
+        p {
+            margin-top: 15px;
+            font-size: 1.1em;
+            color: #34495e;
+        }
+    </style>
+</head>
+<body>
+    <h1>ランダム迷路ゲーム</h1>
+    <canvas id="mazeCanvas" width="600" height="600"></canvas>
+    <p> **矢印キー** (またはW/A/S/Dキー) で操作してください。</p>
+
+    <script>
+        // --- 設定 ---
+        const canvas = document.getElementById('mazeCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const COLS = 15; // 迷路の列数 (セルの数)
+        const ROWS = 15; // 迷路の行数 (セルの数)
+        // 迷路の実際のグリッドサイズ (壁と通路を含めるため: 2*N + 1)
+        const MAZE_COLS = COLS * 2 + 1; 
+        const MAZE_ROWS = ROWS * 2 + 1;
+        
+        // 1グリッド(壁or通路)の描画単位を正確に計算
+        const CELL_UNIT = canvas.width / MAZE_COLS; 
+
+        let maze = []; 
+        let player = { x: 1, y: 1 }; // プレイヤーの初期位置 (左上通路)
+        
+        // ゴールの座標 (右下通路)
+        const END_X = MAZE_COLS - 2;
+        const END_Y = MAZE_ROWS - 2;
+
+        // ----------------------------------------------------
+        // ## 1. 迷路の生成 (深さ優先探索 - 壁破壊型)
+        // ----------------------------------------------------
+        function generateMaze() {
+            // 全て壁(1)で初期化
+            let grid = Array(MAZE_ROWS).fill(0).map(() => Array(MAZE_COLS).fill(1));
+            let stack = [];
+
+            let startX = 1;
+            let startY = 1;
+
+            grid[startY][startX] = 0; // 開始地点を通路(0)に
+            stack.push({ x: startX, y: startY });
+
+            // 上下左右への移動量 (セル単位: 2マスずつ移動)
+            const directions = [
+                { dx: 2, dy: 0 },  // 右
+                { dx: -2, dy: 0 }, // 左
+                { dx: 0, dy: 2 },  // 下
+                { dx: 0, dy: -2 }  // 上
+            ];
+
+            while (stack.length > 0) {
+                let current = stack[stack.length - 1];
+                let unvisitedNeighbors = [];
+
+                // 隣接する未訪問のセルを探す
+                for (let dir of directions) {
+                    let nextX = current.x + dir.dx;
+                    let nextY = current.y + dir.dy;
+
+                    // 迷路の範囲内かつ未訪問のセル (壁=1) であること
+                    if (nextX > 0 && nextX < MAZE_COLS - 1 && 
+                        nextY > 0 && nextY < MAZE_ROWS - 1 && 
+                        grid[nextY][nextX] === 1) {
+                        unvisitedNeighbors.push({ x: nextX, y: nextY, dir: dir });
+                    }
+                }
+
+                if (unvisitedNeighbors.length > 0) {
+                    // ランダムに次のセルを選ぶ
+                    const nextCell = unvisitedNeighbors[Math.floor(Math.random() * unvisitedNeighbors.length)];
+                    
+                    // 間に挟まれた壁の座標を計算
+                    const wallX = current.x + nextCell.dir.dx / 2; 
+                    const wallY = current.y + nextCell.dir.dy / 2; 
+
+                    // 壁を壊して通路にする
+                    grid[wallY][wallX] = 0; 
+                    grid[nextCell.y][nextCell.x] = 0;
+
+                    stack.push(nextCell);
+                } else {
+                    // 行き止まりなので戻る
+                    stack.pop();
+                }
+            }
+
+            // 出口を通路にする (右下隅)
+            grid[END_Y][END_X] = 0; 
+
+            return grid;
+        }
+
+
+        // ----------------------------------------------------
+        // ## 2. 描画処理
+        // ----------------------------------------------------
+        function drawMaze() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            for (let y = 0; y < MAZE_ROWS; y++) {
+                for (let x = 0; x < MAZE_COLS; x++) {
+                    const drawX = x * CELL_UNIT;
+                    const drawY = y * CELL_UNIT;
+
+                    // 壁 (1) の場合
+                    if (maze[y][x] === 1) {
+                        ctx.fillStyle = '#34495e'; // 壁の色
+                        ctx.fillRect(drawX, drawY, CELL_UNIT, CELL_UNIT);
+                    } 
+                    // ゴールの場合
+                    else if (x === END_X && y === END_Y) {
+                        ctx.fillStyle = '#27ae60'; // ゴールの色 (緑)
+                        ctx.fillRect(drawX, drawY, CELL_UNIT, CELL_UNIT);
+                    }
+                }
+            }
+            
+            // プレイヤーを描画
+            ctx.fillStyle = '#e74c3c'; // プレイヤーの色 (赤)
+            ctx.beginPath();
+            // プレイヤーをグリッドの中央に配置
+            ctx.arc(
+                player.x * CELL_UNIT + CELL_UNIT / 2, 
+                player.y * CELL_UNIT + CELL_UNIT / 2, 
+                CELL_UNIT * 0.4, // サイズ調整
+                0, 
+                Math.PI * 2
+            );
+            ctx.fill();
+        }
+
+        // ----------------------------------------------------
+        // ## 3. プレイヤー操作とゲームロジック
+        // ----------------------------------------------------
+        function handleKeyDown(e) {
+            let newX = player.x;
+            let newY = player.y;
+
+            // 移動先の座標を計算
+            switch (e.key) {
+                case 'ArrowUp':
+                case 'w':
+                case 'W':
+                    e.preventDefault(); 
+                    newY -= 1;
+                    break;
+                case 'ArrowDown':
+                case 's':
+                case 'S':
+                    e.preventDefault(); 
+                    newY += 1;
+                    break;
+                case 'ArrowLeft':
+                case 'a':
+                case 'A':
+                    e.preventDefault(); 
+                    newX -= 1;
+                    break;
+                case 'ArrowRight':
+                case 'd':
+                case 'D':
+                    e.preventDefault(); 
+                    newX += 1;
+                    break;
+                default:
+                    return; 
+            }
+
+            // 移動先が通路(0)かどうかチェック
+            if (newY >= 0 && newY < MAZE_ROWS && 
+                newX >= 0 && newX < MAZE_COLS && 
+                maze[newY][newX] === 0) {
+                
+                // プレイヤーの位置を更新
+                player.x = newX;
+                player.y = newY;
+
+                // 再描画
+                drawMaze();
+
+                // ゴール判定
+                if (player.x === END_X && player.y === END_Y) {
+                    // ゴール時のエフェクト
+                    ctx.fillStyle = 'rgba(39, 174, 96, 0.7)'; 
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    
+                    setTimeout(() => {
+                        alert(' ゴールおめでとうございます！新しい迷路を生成します。 ');
+                        initGame();
+                    }, 100); 
+                }
+            }
+        }
+        
+        // ----------------------------------------------------
+        // ## 4. ゲームの初期化
+        // ----------------------------------------------------
+        function initGame() {
+            // 新しい迷路を生成
+            maze = generateMaze();
+            // プレイヤーを初期位置に戻す
+            player = { x: 1, y: 1 };
+            // 描画開始
+            drawMaze();
+        }
+
+        // --- イベントリスナーの設定とゲーム開始 ---
+        document.addEventListener('keydown', handleKeyDown);
+        initGame(); // ゲームをロード時に開始
+    </script>
+</body>
+</html>
